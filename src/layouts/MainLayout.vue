@@ -14,8 +14,6 @@
         <q-toolbar-title>
           E - Catalog
         </q-toolbar-title>
-
-        <div>Quasar v{{ $q.version }}</div>
       </q-toolbar>
     </q-header>
 
@@ -28,7 +26,7 @@
         <q-item-label
           header
         >
-          Essential Links
+          Application Menu
         </q-item-label>
 
         <EssentialLink

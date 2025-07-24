@@ -1,180 +1,108 @@
 <template>
-    <div class="row full-width">
-        <div class="col q-pa-md">
-            <q-btn
-                color="white"
-                text-color="black"
-                label="Add New Row"
-                @click="addNewRow()"
-            />
-        </div>
-        <q-space />
-        <div class="column items-end">
-            <div class="col q-pa-md">
-                <q-btn
-                    color="secondary"
-                    label="Submit Items"
-                    @click="submitItems()"
-                />
-            </div>
-        </div>
-    </div>
-  <div class="row full-width">
-    <div class="col q-pa-md">
-        <SlickgridVue
-            grid-id="items"
-            v-model:columns="columnDefinitions"
-            v-model:options="gridOptions"
-            v-model:data="dataset"
-            @onVueGridCreated="onGridReady($event.detail)"
+  <div class="q-pa-md">
+    <q-table
+      title="Daftar Barang dan Jasa"
+      :rows="rows"
+      :columns="columns"
+      row-key="id"
+      :pagination="pagination"
+      :loading="loading"
+      :filter="filter"
+    >
+      <template v-slot:top>
+        <q-input
+          @update:model-value="files => { file = files[0] }"
+          filled
+          type="file"
+          hint="Import from template"
         />
-    </div>
+        <q-space />
+        <q-btn class="q-ml-sm" color="secondary" :disable="loading" label="Save data" @click="saveData" />
+      </template>
+    </q-table>
   </div>
 </template>
 
 <script setup>
-import axios from 'axios'
-import { Editors, FieldType, SlickgridVue } from 'slickgrid-vue'
-import { fakerID_ID as faker } from '@faker-js/faker'
-import { ref, onBeforeMount } from 'vue'
-
-import { useSettingsStore } from 'stores/settings'
-import { storeToRefs } from 'pinia'
+import { Meilisearch } from 'meilisearch'
+import { useSettingsStore } from '../stores/settings'
+import { ref, watch } from 'vue'
 import { useQuasar } from 'quasar'
+import { faker } from '@faker-js/faker'
+import { read, utils } from 'xlsx'
 
 const $q = useQuasar()
-
-const settingsStore = useSettingsStore()
-const { settings } = storeToRefs(settingsStore)
-
-const gridOptions = ref()
-const columnDefinitions = ref([])
-const dataset = ref([])
-
-let vueGrid = null
-
-onBeforeMount(() => {
-    defineGrid()
+const settings = useSettingsStore()
+const client = new Meilisearch({
+  host: settings.host,
+  apiKey: settings.apiKey,
 })
 
-function onGridReady(grid) {
-    vueGrid = grid
-}
+const columns = [
+  { name: 'sap_code', label: 'SAP Code', align: 'left', field: 'sap_code' },
+  { name: 'name', label: 'Nama', align: 'left', field: 'name' },
+  { name: 'spesification', label: 'Spesifikasi', align: 'left', field: 'spesification' },
+  { name: 'uom', label: 'Satuan', align: 'left', field: 'uom' },
+  { name: 'price', label: 'Harga', align: 'left', field: 'price' },
+  { name: 'reference', label: 'Referensi', align: 'left', field: 'reference' }
+]
 
-function defineGrid() {
-    columnDefinitions.value = [
-        { id: 'name', name: 'Name', field: 'name', type: FieldType.string, editor: { model: Editors.text } },
-        { id: 'specification', name: 'Specification', field: 'specification', type: FieldType.string, editor: { model: Editors.text } },
-        { id: 'uom', name: 'Unit of Measurement', field: 'uom', type: FieldType.string, editor: { model: Editors.text } },
-        { id: 'price', name: 'Price', field: 'price', type: FieldType.string, editor: { model: Editors.text } },
-        { id: 'reference', name: 'Reference', field: 'reference', type: FieldType.string, editor: { model: Editors.text } },
-    ]
+const rows = ref([])
+const loading = ref(false)
+const filter = ref('')
+const pagination = ref({
+  page: 1,
+  rowsPerPage: 20,
+  sortBy: null,
+  descending: false,
+})
+const file = ref(null)
 
-    gridOptions.value = {
-        autoEdit: false,
-        autoCommitEdit: true,
-        editable: true,
-        enableCellNavigation: true,
-        enableExcelCopyBuffer: true,
-        excelCopyBufferOptions: {
-            newRowCreator: (rows) => {
-                for (let i = 0; i < rows; i++) {
-                    addNewRow()
-                }
-            }
-        },
-        enableAutoResize: true,
-        autoResize: {
-            calculateAvailableSizeBy: 'container'
-        }
-    }
-}
+const saveData = async () => {
+  loading.value = true
 
-function addNewRow() {
-    vueGrid.gridService.addItems({ id: faker.string.uuid() }, { position: 'bottom' })
-}
+  try {
+    const response = await client.index('items').addDocuments(rows.value)
 
-function addMockRow() {
-    vueGrid.gridService.addItems({
-        id: faker.string.uuid(),
-        name: faker.commerce.productName(),
-        specification: faker.commerce.isbn(),
-        uom: faker.science.unit().name,
-        price: faker.commerce.price(),
-        reference: faker.company.name()
-    }, {
-        position: 'bottom'
+    rows.value = []
+    file.value = null
+
+    $q.notify({
+      type: 'positive',
+      message: 'Data saved successfully!',
     })
-}
-
-function submitItems() {
-    const server = `${settings.value.host}:${settings.value.port}`
-    const api = '/_bulk'
-    const operations = []
-
-    for (let i = 0, len = dataset.value.length; i < len; i++) {
-        operations.push({ index: { _index: 'catalog', _id: dataset.value[i].id } })
-        operations.push(dataset.value[i])
-    }
-
-    axios({
-        url: api,
-        method: 'post',
-        baseURL: server,
-        data: ndserialize(operations),
-        headers: {
-            'Content-Type': 'application/x-ndjson'
-        }
-    }).then((response) => {
-        if (!response.data.errors) {
-            $q.notify({
-                type: 'positive',
-                message: 'Submitted'
-            })
-
-            dataset.value = []
-        }
-    }).catch((reason) => {
-        $q.notify({
-            type: 'negative',
-            message: reason.message
-        })
+  } catch (error) {
+    $q.notify({
+      type: 'negative',
+      message: 'Failed to save data: ' + error.message,
     })
+  }
+
+  loading.value = false
 }
 
-function serialize(object) {
-    let json = ''
+watch(file, async (newFile) => {
+    if (!newFile) return
+    loading.value = true
 
     try {
-        json = JSON.stringify(object)
+      const data = await newFile.arrayBuffer()
+      const workbook = read(data)
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const sheetRows = utils.sheet_to_json(sheet)
+      const formattedRows = sheetRows.map(row => ({
+        ...row,
+        id: faker.string.uuid(),
+      }))
+
+      rows.value = formattedRows
     } catch (error) {
-        $q.notify({
-            type: 'negative',
-            message: 'Object serialize error'
-        })
+      $q.notify({
+        type: 'negative',
+        message: 'Failed to read file: ' + error.message,
+      })
     }
 
-    return json
-}
-
-function ndserialize(array) {
-    let ndjson = ''
-
-    if (!Array.isArray(array)) {
-        $q.notify({
-            type: 'negative',
-            message: 'NDJson serialize error'
-        })
-    } else {
-        for (let i = 0, len = array.length; i < len; i++) {
-            if (typeof array[i] === 'string') {
-                ndjson += array[i] + '\n'
-            } else {
-                ndjson += serialize(array[i]) + '\n'
-            }
-        }
-
-        return ndjson
-    }
-}
+    loading.value = false
+})
 </script>

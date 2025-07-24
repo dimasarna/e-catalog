@@ -17,9 +17,9 @@
 
         <q-input
           filled
-          v-model="port"
-          label="Server Port"
-          hint="Nomor port database"
+          v-model="apiKey"
+          label="Private Key"
+          hint="Nomor key untuk connect ke database"
           lazy-rules
           :rules="[ val => val && val.length > 0 || 'Please type something']"
         />
@@ -34,24 +34,19 @@
 </template>
 
 <script setup>
-import { storeToRefs } from 'pinia'
 import { useQuasar } from 'quasar'
 import { useSettingsStore } from 'stores/settings'
 import { ref } from 'vue'
 
 const $q = useQuasar()
-const settingsStore = useSettingsStore()
-const { settings } = storeToRefs(settingsStore)
-const { updateSettings } = settingsStore
+const settings = useSettingsStore()
 
-const host = ref(settings.value.host)
-const port = ref(settings.value.port)
+const host = ref(settings.host)
+const apiKey = ref(settings.apiKey)
 
 const onSubmit = () => {
-  updateSettings({
-    host: host.value,
-    port: port.value
-  })
+  settings.setHost(host.value)
+  settings.setApiKey(apiKey.value)
 
   $q.notify({
     type: 'positive',
@@ -61,6 +56,6 @@ const onSubmit = () => {
 
 const onReset = () => {
   host.value = null,
-  port.value = null
+  apiKey.value = null
 }
 </script>

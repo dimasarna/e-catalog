@@ -1,147 +1,117 @@
 <template>
-  <q-page class="flex">
-    <div class="row q-pa-md" style="width: 400px;">
-      <div class="col">
-        <q-input
-          v-model="query"
-          debounce="1000"
-          placeholder="Isolator 160 kN"
-        />
-      </div>
-    </div>
-    <div class="row q-pa-md">
-      <div class="col">
-        <SlickgridVue
-          grid-id="catalog"
-          v-model:columns="columnDefinitions"
-          v-model:options="gridOptions"
-          v-model:data="dataset"
-          @onVueGridCreated="onGridReady($event.detail)"
-        />
-      </div>
-    </div>
-  </q-page>
+  <div class="q-pa-md">
+    <q-table
+      ref="tableRef"
+      title="Daftar Barang dan Jasa"
+      :rows="rows"
+      :columns="columns"
+      row-key="id"
+      v-model:pagination="pagination"
+      :loading="loading"
+      :filter="filter"
+      selection="multiple"
+      v-model:selected="selected"
+      @request="onRequest"
+    >
+      <template v-slot:top-right>
+        <q-input borderless dense debounce="300" v-model="filter" placeholder="Search">
+          <template v-slot:append>
+            <q-icon name="search" />
+          </template>
+        </q-input>
+      </template>
+      <template v-slot:top-selection>
+        <q-btn color="negative" :disable="loading" label="Delete data" @click="deleteData" />
+      </template>
+    </q-table>
+  </div>
 </template>
 
 <script setup>
-import axios from 'axios'
-import { storeToRefs } from 'pinia'
+import { Meilisearch } from 'meilisearch'
+import { useSettingsStore } from '../stores/settings'
+import { onMounted, ref } from 'vue'
 import { useQuasar } from 'quasar'
-import { Formatters, SlickgridVue } from 'slickgrid-vue'
-import { useSettingsStore } from 'stores/settings'
-import { onBeforeMount, ref, watch } from 'vue'
 
 const $q = useQuasar()
-
-const query = ref('')
-
-const settingsStore = useSettingsStore()
-const { settings } = storeToRefs(settingsStore)
-
-const gridOptions = ref({})
-const columnDefinitions = ref([])
-const dataset = ref([])
-
-let vueGrid = null
-
-watch(query, (newQuery, lastQuery) => {
-  updateData(newQuery)
+const settings = useSettingsStore()
+const client = new Meilisearch({
+  host: settings.host,
+  apiKey: settings.apiKey,
 })
 
-onBeforeMount(() => {
-  defineGrid()
+const columns = [
+  { name: 'sap_code', label: 'SAP Code', align: 'left', field: 'sap_code' },
+  { name: 'name', label: 'Nama', align: 'left', field: 'name' },
+  { name: 'spesification', label: 'Spesifikasi', align: 'left', field: 'spesification' },
+  { name: 'uom', label: 'Satuan', align: 'left', field: 'uom' },
+  { name: 'price', label: 'Harga', align: 'left', field: 'price' },
+  { name: 'reference', label: 'Referensi', align: 'left', field: 'reference' }
+]
+
+const tableRef = ref()
+const rows = ref([])
+const loading = ref(false)
+const filter = ref('')
+const pagination = ref({
+  sortBy: null,
+  descending: false,
+  page: 1,
+  rowsPerPage: 20,
+  rowsNumber: 100
 })
+const selected = ref([])
 
-function onGridReady(grid) {
-    vueGrid = grid
-}
+const onRequest = async (props) => {
+  loading.value = true
 
-function defineGrid() {
-  columnDefinitions.value = [
-    {
-      id: 'delete',
-      field: 'delete',
-      excludeFromHeaderMenu: true,
-      formatter: Formatters.icon,
-      params: { iconCssClass: 'mdi mdi-trash-can pointer' },
-      minWidth: 32,
-      maxWidth: 32,
-      onCellClick: (_e, args) => {
-        $q.dialog({
-          title: 'Confirm',
-          message: 'Are you sure about deleting this data?',
-          cancel: true,
-          persistent: true
-        }).onOk(() => {
-          deleteData(args.dataContext.id)
-        })
-      }
-    },
-    { id: 'name', name: 'Name', field: 'name' },
-    { id: 'specification', name: 'Specification', field: 'specification' },
-    { id: 'uom', name: 'Unit of Measurement', field: 'uom' },
-    { id: 'price', name: 'Price', field: 'price' },
-    { id: 'reference', name: 'Reference', field: 'reference' },
-  ]
+  try {
+    const { page, rowsPerPage } = props.pagination
+    const searchQuery = filter.value || ''
 
-  gridOptions.value = {
-    enableAutoResize: true,
-    autoResize: {
-      minWidth: 400,
-      maxWidth: 1120
-    },
-    enablePagination: true
-  }
-
-  updateData(query.value)
-}
-
-function updateData(query) {
-  const server = `${settings.value.host}:${settings.value.port}`
-  const api = '/_search'
-
-  axios({
-    url: api,
-    method: 'post',
-    baseURL: server,
-    data: (query === '') ? '' : {
-      query: {
-        query_string: {
-          query: query
-        }
-      }
-    }
-  }).then((response) => {
-    const data = response.data.hits.hits.map((item) => {
-      return { ...item._source }
+    const response = await client.index('items').search(searchQuery, {
+      limit: rowsPerPage,
+      offset: (page - 1) * rowsPerPage,
     })
 
-    dataset.value = data
-  })
-}
-
-function deleteData(id) {
-  const server = `${settings.value.host}:${settings.value.port}`
-  const api = '/catalog/_doc/' + id
-
-  axios({
-    url: api,
-    method: 'delete',
-    baseURL: server,
-  }).then((response) => {
-    if (response.data.result === 'deleted') {
-      vueGrid.gridService.deleteItemById(id)
-      
-      $q.notify({
-        type: 'positive',
-        message: 'Data deleted'
-      })
-    }
-  }).catch((reason) => {
+    rows.value = response.hits
+    pagination.value.rowsNumber = response.estimatedTotalHits
+    pagination.value.page = page
+    pagination.value.rowsPerPage = rowsPerPage
+  } catch (error) {
     $q.notify({
       type: 'negative',
-      message: reason.message
+      message: 'Failed to load data: ' + error.message,
     })
-  })
+  }
+
+  loading.value = false
 }
+
+const deleteData = async () => {
+  loading.value = true
+
+  try {
+    const ids = selected.value.map(item => item.id)
+    const response = await client.index('items').deleteDocuments(ids)
+    rows.value = rows.value.filter(row => !ids.includes(row.id))
+    selected.value = []
+
+    $q.notify({
+      type: 'positive',
+      message: 'Data deleted successfully!',
+    })
+  } catch (error) {
+    $q.notify({
+      type: 'negative',
+      message: 'Failed to delete data: ' + error.message,
+    })
+  }
+
+  loading.value = false
+}
+
+onMounted(() => {
+  tableRef.value.requestServerInteraction()
+})
 </script>

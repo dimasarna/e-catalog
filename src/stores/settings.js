@@ -1,35 +1,20 @@
-import { defineStore, acceptHMRUpdate } from 'pinia'
-import { useQuasar } from 'quasar'
-import { ref, computed } from 'vue'
+import { defineStore } from 'pinia'
+import { LocalStorage } from 'quasar'
+import { ref } from 'vue'
 
 export const useSettingsStore = defineStore('settings', () => {
-  const $q = useQuasar()
-
-  const getDefaultSettings = () => ({
-    host: 'http://localhost',
-    port: '9200'
-  })
-
-  const getSettings = () => {
-    const settings = $q.localStorage.getItem('settings')
-
-    return settings ? JSON.parse(settings) : getDefaultSettings()
+  const host = ref(LocalStorage.getItem('host') || 'http://127.0.0.1:7700')
+  const apiKey = ref(LocalStorage.getItem('apiKey') || 'uLj9DmMV4bixoEk5vNFjF2Ip-SlQXV2fuBLHj2DT0NA')
+  
+  const setHost = (newHost) => {
+    host.value = newHost
+    LocalStorage.set('host', newHost)
   }
 
-  const updateSettings = (partialSettings) => {
-    settings.value = {
-      ...settings.value,
-      ...partialSettings
-    }
-    
-    $q.localStorage.setItem('settings', JSON.stringify(settings.value))
+  const setApiKey = (newApiKey) => {
+    apiKey.value = newApiKey
+    LocalStorage.set('apiKey', newApiKey)
   }
 
-  const settings = ref(getSettings())
-
-  return { settings, updateSettings }
+  return { host, apiKey, setHost, setApiKey }
 })
-
-if (import.meta.hot) {
-  import.meta.hot.accept(acceptHMRUpdate(useSettingsStore, import.meta.hot))
-}
